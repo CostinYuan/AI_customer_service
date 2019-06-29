@@ -16,10 +16,6 @@ def getRobotReply(question):
 
     if "你好" in question:
         answer = "你好？"
-    elif "你叫啥" in question:
-        answer = "你叫啥？"
-    elif "你多大" in question:
-        answer = "你多大？"
     else:
         try:
             # 调用NLP接口实现智能回复
