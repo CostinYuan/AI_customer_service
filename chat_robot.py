@@ -24,16 +24,9 @@ app = flask.Flask(__name__)
 @app.route("/wx", methods=['POST', 'GET'])
 def weixin_handler():
     # 从config文件中获取
-    '''
     token = os.getenv('WECHAT_TOKEN', config.WECHAT_TOKEN)
     encodingAESKey = os.getenv('WECHAT_ENCODING_AES_KEY', config.WECHAT_ENCODING_AES_KEY)
     appId = os.getenv('WECHAT_APP_ID', config.WECHAT_APP_ID)
-    '''
-    token = "yuanhaidongqing"
-    encodingAESKey = "1Enmtqh9h5WOWHprcGXUUkeL8UxjZ5X7Hl4p1xxLZ80"
-    appId = "wxe9860b4e120cb728"
-
-
 
     # 从请求中获取
     signature = flask.request.args.get("signature")
@@ -81,63 +74,9 @@ def weixin_handler():
             reply.media_id = msg.media_id
         else:
             reply = TextReply(content="暂时不支持此种类型的回复哦～", message=msg)
+        print('Enscypted message: \n%s' % reply)
         # 返回加密信息
         return crypto.encrypt_message(
-            reply.render(),
-            nonce,
-            timestamp
-        )
-    
-    
-
-@app.route("/wx", methods=['POST', 'GET'])
-def auto_reply():
-    '''
-    函数功能：解析xml消息并调用get_robot_reply函数进行回复
-
-    参数描述：
-    msg：被动响应收到的消息解析后变量
-    res：通过机器人获得的回复
-    xml：回复消息内容xml
-
-    返回值：xml，回复内容xml
-    '''
-
-    # 从config文件中获取
-    token = os.getenv('WECHAT_TOKEN', config.WECHAT_TOKEN)
-    encodingAESKey = os.getenv('WECHAT_ENCODING_AES_KEY', config.WECHAT_ENCODING_AES_KEY)
-    appId = os.getenv('WECHAT_APP_ID', config.WECHAT_APP_ID)
-
-    # 从请求中获取
-    # signature = flask.request.args.get("signature")
-    timestamp = flask.request.args.get("timestamp")
-    nonce = flask.request.args.get("nonce")
-    msg_signature = flask.request.args.get("msg_signature")
-
-    crypto = WeChatCrypto(token, encodingAESKey, appId)
-    try:
-            msg = crypto.decrypt_message(
-                flask.request.data,
-                msg_signature,
-                timestamp,
-                nonce
-            )
-            print('Descypted message: \n%s' % msg)  # 输出数据内容
-    except (InvalidSignatureException, InvalidAppIdException):
-        flask.abort(405)
-    msg = parse_message(msg)  # 解析xml
-
-    if msg.type == "text":  # 文字回复
-        res = get_robot_reply(msg.content)
-        reply = TextReply(message=msg)
-        reply.content = '%s' % (res)
-    elif msg.type == "image":  # 图片回复
-        reply = ImageReply(message=msg)
-        reply.media_id = msg.media_id
-    else:
-        reply = TextReply(content="暂时不支持此种类型的回复哦～", message=msg)
-    # 加密传回
-    return crypto.encrypt_message(
             reply.render(),
             nonce,
             timestamp
