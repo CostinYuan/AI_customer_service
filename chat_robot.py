@@ -7,42 +7,90 @@
 import urllib.request
 import urllib.parse
 import flask
-import xml.etree.ElementTree as ET
+import os
 from wechatpy.utils import check_signature
-from wechatpy.exceptions import InvalidSignatureException
-from wechatpy import parse_message
+from wechatpy.enterprise.crypto import WeChatCrypto
+from wechatpy.exceptions import InvalidSignatureException, InvalidAppIdException
+from wechatpy import parse_message, create_reply
 from wechatpy.replies import TextReply
 from wechatpy.replies import ImageReply
+import config
+
 
 
 app = flask.Flask(__name__)
 
 
-@app.route("/wx", methods=['GET'])
+@app.route("/wx", methods=['POST', 'GET'])
 def weixin_handler():
-    token = "xxxxxxx"
+    # 从config文件中获取
+    '''
+    token = os.getenv('WECHAT_TOKEN', config.WECHAT_TOKEN)
+    encodingAESKey = os.getenv('WECHAT_ENCODING_AES_KEY', config.WECHAT_ENCODING_AES_KEY)
+    appId = os.getenv('WECHAT_APP_ID', config.WECHAT_APP_ID)
+    '''
+    token = "yuanhaidongqing"
+    encodingAESKey = "1Enmtqh9h5WOWHprcGXUUkeL8UxjZ5X7Hl4p1xxLZ80"
+    appId = "wxe9860b4e120cb728"
+
+
+
+    # 从请求中获取
     signature = flask.request.args.get("signature")
     timestamp = flask.request.args.get("timestamp")
     nonce = flask.request.args.get("nonce")
     echostr = flask.request.args.get("echostr")
+    # encrypt_type = flask.request.args.get("encrypt_type")
+    msg_signature = flask.request.args.get("msg_signature")
 
+    '''
+    print('signature:', signature)
+    print('timestamp: ', timestamp)
+    print('nonce:', nonce)
+    print('echo_str:', echostr)
+    print('encrypt_type:', encrypt_type)
+    print('msg_signature:', msg_signature)
+    '''
+
+    crypto = WeChatCrypto(token, encodingAESKey, appId)
     try:
-        # 校验token
-        check_signature(token, signature, timestamp, nonce)
+        check_signature(token, signature, timestamp, nonce)  # 签名验证
     except InvalidSignatureException:
-        # 处理异常情况或忽略
         flask.abort(403)  # 校验token失败，证明这条消息不是微信服务器发送过来的
 
-    '''
-    if flask.request.method == "GET":
+    if flask.request.method == "GET":  # 如果时明文模式 直接返回echoster
         return echostr
-    elif flask.request.method == "POST":
-        print(flask.request.data)
-    '''
+    elif flask.request.method == "POST":  # 如果时加密模式 先对传入的数据解密
+        try:
+            msg = crypto.decrypt_message(
+                flask.request.data,
+                msg_signature,
+                timestamp,
+                nonce
+            )
+            print('Descypted message: \n%s' % msg)  # 输出数据内容
+        except (InvalidSignatureException, InvalidAppIdException):
+            flask.abort(404)
+        msg = parse_message(msg)  # 解析xml
+        if msg.type == 'text':
+            res = get_robot_reply(msg.content)
+            reply = TextReply(message=msg)
+            reply.content = '%s' % (res)
+        elif msg.type == "image":  # 图片回复
+            reply = ImageReply(message=msg)
+            reply.media_id = msg.media_id
+        else:
+            reply = TextReply(content="暂时不支持此种类型的回复哦～", message=msg)
+        # 返回加密信息
+        return crypto.encrypt_message(
+            reply.render(),
+            nonce,
+            timestamp
+        )
     
-    return echostr
+    
 
-@app.route("/wx", methods=['POST'])
+@app.route("/wx", methods=['POST', 'GET'])
 def auto_reply():
     '''
     函数功能：解析xml消息并调用get_robot_reply函数进行回复
@@ -55,7 +103,30 @@ def auto_reply():
     返回值：xml，回复内容xml
     '''
 
-    msg = parse_message(flask.request.data)  # 解析收到的消息
+    # 从config文件中获取
+    token = os.getenv('WECHAT_TOKEN', config.WECHAT_TOKEN)
+    encodingAESKey = os.getenv('WECHAT_ENCODING_AES_KEY', config.WECHAT_ENCODING_AES_KEY)
+    appId = os.getenv('WECHAT_APP_ID', config.WECHAT_APP_ID)
+
+    # 从请求中获取
+    # signature = flask.request.args.get("signature")
+    timestamp = flask.request.args.get("timestamp")
+    nonce = flask.request.args.get("nonce")
+    msg_signature = flask.request.args.get("msg_signature")
+
+    crypto = WeChatCrypto(token, encodingAESKey, appId)
+    try:
+            msg = crypto.decrypt_message(
+                flask.request.data,
+                msg_signature,
+                timestamp,
+                nonce
+            )
+            print('Descypted message: \n%s' % msg)  # 输出数据内容
+    except (InvalidSignatureException, InvalidAppIdException):
+        flask.abort(405)
+    msg = parse_message(msg)  # 解析xml
+
     if msg.type == "text":  # 文字回复
         res = get_robot_reply(msg.content)
         reply = TextReply(message=msg)
@@ -65,8 +136,12 @@ def auto_reply():
         reply.media_id = msg.media_id
     else:
         reply = TextReply(content="暂时不支持此种类型的回复哦～", message=msg)
-    xml = reply.render()  # 转换成xml
-    return xml
+    # 加密传回
+    return crypto.encrypt_message(
+            reply.render(),
+            nonce,
+            timestamp
+        )
     
 
 def get_robot_reply(question):
